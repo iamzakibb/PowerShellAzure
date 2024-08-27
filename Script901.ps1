@@ -1,4 +1,3 @@
-
 $AppID = ""
 $Secret = ""
 $TenantID = ""
@@ -7,69 +6,94 @@ $secureClientSecret = ConvertTo-SecureString $Secret -AsPlainText -Force
 $credential = New-Object System.Management.Automation.PSCredential ($AppID, $secureClientSecret)
 Connect-AzAccount -ServicePrincipal -Tenant $tenantId -Credential $credential
 
-
-# Array objects to hold data
-$ManagementGroups = @()
-$CustomSubscriptions = @()
-$Resources = @()
-$Permissions = @()
+# arrays 
+$ManagementGroups = New-Object System.Collections.Generic.List[object]
+$CustomSubscriptions = New-Object System.Collections.Generic.List[object]
+$Resources = New-Object System.Collections.Generic.List[object]
+$Permissions = New-Object System.Collections.Generic.List[object]
 
 # Step 1: Collect Management Groups
+Write-Host "Collecting Management Groups..."
 $mgmtGroups = Get-AzManagementGroup
-foreach ($mg in $mgmtGroups) {
-    $mgObj = [pscustomobject][ordered]@{
-        id               = [string]$mg.Id
-        name             = [string]$mg.Name
-        displayName      = [string]$mg.DisplayName
-        tenantId         = [string]$TenantID
+if ($mgmtGroups) {
+    $mgmtGroups | ForEach-Object {
+        $mgObj = [pscustomobject][ordered]@{
+            id           = [string]$_.Id
+            name         = [string]$_.Name
+            displayName  = [string]$_.DisplayName
+            tenantId     = [string]$TenantID
+        }
+        [void]($ManagementGroups.Add($mgObj))
     }
-    $ManagementGroups += $mgObj
+    Write-Host "Collected $($ManagementGroups.Count) Management Groups"
+} else {
+    Write-Host "No Management Groups found."
 }
 
 # Step 2: Collect Subscriptions
+Write-Host "Collecting Subscriptions..."
 $subscriptions = Get-AzSubscription
-foreach ($sub in $subscriptions) {
-    $subObj = [pscustomobject][ordered]@{
-        id               = [string]$sub.Id
-        name             = [string]$sub.Name
-        state            = [string]$sub.State
-        tenantId         = [string]$TenantID
-        managementGroupId = [string]($ManagementGroups | Where-Object { $_.tenantId -eq $TenantID }).id
+if ($subscriptions) {
+    $subscriptions | ForEach-Object {
+        $subObj = [pscustomobject][ordered]@{
+            id                 = [string]$_.Id
+            name               = [string]$_.Name
+            state              = [string]$_.State
+            tenantId           = [string]$TenantID
+            managementGroupId  = [string]($ManagementGroups | Where-Object { $_.tenantId -eq $TenantID }).id
+        }
+        [void]($CustomSubscriptions.Add($subObj))
     }
-    $CustomSubscriptions += $subObj
+    Write-Host "Collected $($CustomSubscriptions.Count) Subscriptions"
+} else {
+    Write-Host "No Subscriptions found."
 }
 
 # Step 3: Collect Resources
+Write-Host "Collecting Resources..."
 $resources = Get-AzResource
-foreach ($res in $resources) {
-    $resObj = [pscustomobject][ordered]@{
-        id                = [string]$res.ResourceId
-        name              = [string]$res.Name
-        type              = [string]$res.ResourceType
-        location          = [string]$res.Location
-        subscriptionId    = [string]$res.SubscriptionId
-        tenantId          = [string]$TenantID
+if ($resources) {
+    $resources | ForEach-Object {
+        $resObj = [pscustomobject][ordered]@{
+            id              = [string]$_.ResourceId
+            name            = [string]$_.Name
+            type            = [string]$_.ResourceType
+            location        = [string]$_.Location
+            subscriptionId  = [string]$_.SubscriptionId
+            tenantId        = [string]$TenantID
+        }
+        [void]($Resources.Add($resObj))
     }
-    $Resources += $resObj
+    Write-Host "Collected $($Resources.Count) Resources"
+} else {
+    Write-Host "No Resources found."
 }
 
 # Step 4: Collect Permissions
-foreach ($sub in $subscriptions) {
-    $roleAssignments = Get-AzRoleAssignment -Scope "/subscriptions/$($sub.Id)"
-    foreach ($roleAssignment in $roleAssignments) {
-        $permObj = [pscustomobject][ordered]@{
-            principalName    = [string]$roleAssignment.PrincipalName
-            roleName         = [string]$roleAssignment.RoleDefinitionName
-            principalType    = [string]$roleAssignment.PrincipalType
-            scope            = [string]$roleAssignment.Scope
-            subscriptionId   = [string]$sub.Id
-            tenantId         = [string]$TenantID
+Write-Host "Collecting Permissions..."
+if ($subscriptions) {
+    $subscriptions | ForEach-Object {
+        $roleAssignments = Get-AzRoleAssignment -Scope "/subscriptions/$($_.Id)"
+        if ($roleAssignments) {
+            $roleAssignments | ForEach-Object {
+                $permObj = [pscustomobject][ordered]@{
+                    principalName  = [string]$_.PrincipalName
+                    roleName       = [string]$_.RoleDefinitionName
+                    principalType  = [string]$_.PrincipalType
+                    scope          = [string]$_.Scope
+                    subscriptionId = [string]$_.Id
+                    tenantId       = [string]$TenantID
+                }
+                [void]($Permissions.Add($permObj))
+            }
         }
-        $Permissions += $permObj
     }
+    Write-Host "Collected $($Permissions.Count) Permissions"
+} else {
+    Write-Host "No Permissions found."
 }
 
-# Step 5: Print the structured output
+# Step 5: Print the output
 Write-Host "Management Groups:`n"
 $ManagementGroups | ForEach-Object {
     Write-Host "id (string): $($_.id)"
